@@ -4,6 +4,11 @@ from app.router.post import router as post_router
 from app.router.auth import router as auth_router
 from app.router.verify import router as verify_router
 from app.models.models import Base
+from app.models import models
+
+models.Base.metadata.create_all(bind=engine)
+
+app = FastAPI()
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,11 +24,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.models import models
-
-models.Base.metadata.create_all(bind=engine)
-
-app = FastAPI()
 
 app.include_router(post_router)
 app.include_router(auth_router)
