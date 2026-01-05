@@ -5,6 +5,20 @@ from app.router.auth import router as auth_router
 from app.router.verify import router as verify_router
 from app.models.models import Base
 
+from fastapi.middleware.cors import CORSMiddleware
+
+origins= [
+    "http://localhost:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 from app.models import models
 
 models.Base.metadata.create_all(bind=engine)
