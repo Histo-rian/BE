@@ -5,7 +5,9 @@ from app.router.auth import router as auth_router
 from app.router.verify import router as verify_router
 from app.models.models import Base
 
-Base.metadata.create_all(bind=engine)
+from app.models import models
+
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
