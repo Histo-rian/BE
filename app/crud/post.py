@@ -16,45 +16,35 @@ class VerificationResult(BaseModel):
     comment: str
 
 def create_post(db: Session, post: PostCreate):
+    prompt = f"당신은 전문 역사학자입니다. 다음 내용의 역사적 사실 여부를 판단하고 반드시 한국어로 설명해주세요: {post.contents}"
+    
+    time.sleep(1) 
+            
+    response = client.models.generate_content(
+        model='gemini-2.5-flash', 
+        contents=prompt,
+        config={
+            'response_mime_type': 'application/json',
+            'response_schema': VerificationResult,
+        }
+    )
+    
+    if response.parsed:
+        result = response.parsed
+    else:
+        raw_data = json.loads(response.text)
+        result = VerificationResult(**raw_data)
+    
     db_post = Post(
         title=post.title,
         contents=post.contents,
-        author_id=post.author_id
+        author_id=post.author_id,
+        verified=result.isReal
     )
-    prompt = f"당신은 전문 역사학자입니다. 다음 내용의 역사적 사실 여부를 판단하고 반드시 한국어로 설명해주세요: {post.contents}"
-    
-    delay = 2 
-    
-    for attempt in range(max_retries):
-        try:
-            time.sleep(1) 
-            
-            response = client.models.generate_content(
-                model='gemini-2.5-flash', 
-                contents=prompt,
-                config={
-                    'response_mime_type': 'application/json',
-                    'response_schema': VerificationResult,
-                }
-            )
-            
-            if response.parsed:
-                return response.parsed
-            return json.loads(response.text)
-
-        except Exception as e:
-            error_msg = str(e)
-            if "429" in error_msg:
-                print(f"[시도 {attempt+1}] 제한 발생. {delay}초 후 재시도합니다...")
-                time.sleep(delay)
-                delay *= 2
-            else:
-                print(f"에러: {error_msg}")
-                break
     db.add(db_post)
     db.commit()
     db.refresh(db_post)
-    return db_post
+    return {"post": db_post, "comment": result.comment}
 
 def get_all_posts(db: Session, skip: int = 0, limit: int = 100):
     return db.query(Post).offset(skip).limit(limit).all()
@@ -65,8 +55,11 @@ def get_recent_posts(db: Session, limit: int = 3):
 def get_post(db: Session, post_id: int):
     return db.query(Post).filter(Post.post_id == post_id).first()
 
+def get_post_by_title(db: Session, post_title: str):
+    return db.query(Post).filter(Post.title.contains(post_title)).all()
+
 def get_user_post(db: Session, user_id: int):
-    return db.query(Post).filter(Post.user_id == user_id).all()
+    return db.query(Post).filter(Post.author_id == user_id).all()
 
 def update_post(db: Session, post_id: int, post_update: PostUpdate):
     db_post = get_post(db, post_id)
