@@ -36,5 +36,6 @@ class Post(Base):
     title = Column(String)
     contents = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    verified = Column(Boolean, default=False)
 
     author = relationship("User", back_populates="posts")
