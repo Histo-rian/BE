@@ -6,6 +6,7 @@ class PostBase(BaseModel):
     title: str
     contents: str
     author_id: int
+    verified: bool
 
 class PostCreate(PostBase):
     pass
@@ -20,7 +21,7 @@ class Post(PostBase):
 
     class Config:
         from_attributes = True
-        
+
 class PostWithComment(BaseModel):
     post: Post
     comment: str
