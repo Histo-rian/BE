@@ -56,7 +56,7 @@ def read_post_by_title(title: str, db: Session = Depends(get_db)):
     posts = get_post_by_title(db, title)
     return posts
 
-@router.get("/{user_id}", response_model=Post)
+@router.get("/{user_id}", response_model=List[Post])
 def read_post_by_user_id(user_id: int, db: Session = Depends(get_db)):
     posts = get_user_post(db, user_id)
     return posts
