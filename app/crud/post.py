@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from app.models.models import Post,User
+from app.models.models import User,Post
 from app.schemas.post import PostCreate, PostUpdate
 import time
 import json
@@ -15,7 +15,7 @@ class VerificationResult(BaseModel):
     isReal: bool
     comment: str
 
-def create_post(db: Session, post: PostCreate):
+def _verify_post_content(contents: str):
     prompt=f"""
         당신은 사료 비판과 역사적 개연성을 분석하는 전문 역사학자입니다. 
         제공된 글의 [역사적 사실성]과 [논리적 타당성]을 다음 기준에 따라 엄격히 검증하세요.
@@ -29,11 +29,8 @@ def create_post(db: Session, post: PostCreate):
         5. 보완점: 논리의 완성도를 높이기 위해 추가로 검토해야 할 1차 사료나 연구 문헌을 제시할 것.
 
         [검증 대상 본문]:
-        {post.contents[:2000]}
+        {contents[:2000]}
     """
-    user_exists = db.query(User).filter(User.id == post.author_id).first()
-    if not user_exists:
-        return {"error": "존재하지 않는 사용자 ID입니다."}
     verified_status = False
     ai_comment = "검증 서비스 일시 중단"
 
@@ -52,10 +49,22 @@ def create_post(db: Session, post: PostCreate):
             verified_status = result.isReal
             ai_comment = result.comment
             
-    except errors.ServerError as e:
-        ai_comment = "AI 서버 과부하로 인해 나중에 검증됩니다."
     except Exception as e:
-        ai_comment = "검증 중 오류가 발생했습니다."
+        # Check if it's a quota error or other
+        error_msg = str(e)
+        if "RESOURCE_EXHAUSTED" in error_msg:
+            ai_comment = "AI 서버 과부하로 인해 나중에 검증됩니다."
+        else:
+            ai_comment = "검증 중 오류가 발생했습니다."
+
+    return verified_status, ai_comment
+
+def create_post(db: Session, post: PostCreate):
+    user_exists = db.query(User).filter(User.id == post.author_id).first()
+    if not user_exists:
+        return {"error": "존재하지 않는 사용자 ID입니다."}
+    
+    verified_status, ai_comment = _verify_post_content(post.contents)
 
     db_post = Post(
         title=post.title,
@@ -94,12 +103,19 @@ def update_post(db: Session, post_id: int, post_update: PostUpdate):
         return None
     
     update_data = post_update.dict(exclude_unset=True)
+    
+    ai_comment = None
+    if "contents" in update_data:
+        verified_status, ai_comment = _verify_post_content(update_data["contents"])
+        db_post.verified = verified_status
+    
     for key, value in update_data.items():
         setattr(db_post, key, value)
     
     db.commit()
     db.refresh(db_post)
-    return db_post
+    
+    return {"post": db_post, "comment": ai_comment if ai_comment else "기존 검증 상태 유지"}
 
 def delete_post(db: Session, post_id: int):
     db_post = get_post(db, post_id)

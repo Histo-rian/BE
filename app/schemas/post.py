@@ -20,3 +20,7 @@ class Post(PostBase):
 
     class Config:
         from_attributes = True
+        
+class PostWithComment(BaseModel):
+    post: Post
+    comment: str

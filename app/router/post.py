@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from app.core.database import SessionLocal
 from app.crud.post import create_post as crud_create_post, get_all_posts, get_recent_posts, get_post, update_post, delete_post
-from app.schemas.post import Post, PostCreate, PostUpdate
+from app.schemas.post import Post, PostCreate, PostUpdate,PostWithComment
 
 router = APIRouter(
     prefix="/posts",
@@ -16,7 +16,7 @@ def get_db():
     finally:
         db.close()
 
-@router.post("/", response_model=Post)
+@router.post("/", response_model=PostWithComment)
 def create_post(post: PostCreate, db: Session = Depends(get_db)):
     return crud_create_post(db=db, post=post)
 
@@ -37,7 +37,7 @@ def read_post(post_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Post not found")
     return db_post
 
-@router.put("/{post_id}", response_model=Post)
+@router.put("/{post_id}", response_model=PostWithComment)
 def update_existing_post(post_id: int, post: PostUpdate, db: Session = Depends(get_db)):
     db_post = update_post(db, post_id=post_id, post_update=post)
     if db_post is None:
