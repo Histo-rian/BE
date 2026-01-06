@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from app.models.models import Post
+from app.models.models import Post,User
 from app.schemas.post import PostCreate, PostUpdate
 import time
 import json
@@ -16,51 +16,62 @@ class VerificationResult(BaseModel):
     comment: str
 
 def create_post(db: Session, post: PostCreate):
-    prompt = f"""
-        당신은 사료 비판과 논리 분석에 정통한 전문 역사학자입니다. 
-        다음 제공되는 글의 '역사적 사실 관계'와 '논술적 타당성'을 엄격하게 검증해 주세요. 
+    prompt=f"""
+        당신은 사료 비판과 역사적 개연성을 분석하는 전문 역사학자입니다. 
+        제공된 글의 [역사적 사실성]과 [논리적 타당성]을 다음 기준에 따라 엄격히 검증하세요.
 
-        분석은 다음 순서에 따라 한국어로 진행해 주세요:
+        1. 핵심 주장 요약: 작성자의 주된 논지를 한 문장으로 정리할 것.
+        2. 사실 관계(Fact-Check): 언급된 연도, 인물, 사건 중 오류가 있다면 근거와 함께 교정할 것.
+        3. 논리적 인과관계: 
+        - 전제에서 결론으로 가는 과정에 논리적 비약이나 '결과론적 해석'이 없는가?
+        - 특정 의도를 가지고 사료를 선택적으로 해석한 '확증 편향'이 보이는가?
+        4. 학술적 타당성: 해당 주장이 역사학계의 통설과 일치하는지, 아니면 근거 있는 새로운 가설인지 판정할 것.
+        5. 보완점: 논리의 완성도를 높이기 위해 추가로 검토해야 할 1차 사료나 연구 문헌을 제시할 것.
 
-        1. 요약: 작성자가 주장하는 핵심 요지는 무엇인가?
-        2. 사실 검증: 글에 포함된 구체적인 역사적 사실(연도, 인물, 사건 등) 중 오류가 있는가?
-        3. 논리 분석: 
-        - 주장에 대한 근거가 적절한 사료(Primary/Secondary Sources)에 기반하고 있는가?
-        - 인과관계 설정에 논리적 비약이나 오류(결과론적 해석, 확증 편향 등)가 없는가?
-        4. 종합 판정: 이 글은 역사적 관점에서 '타당한 논리'인가, 아니면 '왜곡된 주장'인가?
-        5. 보완 제언: 논리를 완성하기 위해 추가로 참고해야 할 사료나 관점은 무엇인가?
-
-        [검증할 내용]:
-        {post.contents}
+        [검증 대상 본문]:
+        {post.contents[:2000]}
     """
-    
-    time.sleep(1) 
+    user_exists = db.query(User).filter(User.id == post.author_id).first()
+    if not user_exists:
+        return {"error": "존재하지 않는 사용자 ID입니다."}
+    verified_status = False
+    ai_comment = "검증 서비스 일시 중단"
+
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.0-flash', 
+            contents=prompt,
+            config={
+                'response_mime_type': 'application/json',
+                'response_schema': VerificationResult,
+            }
+        )
+        
+        if response.parsed:
+            result = response.parsed
+            verified_status = result.isReal
+            ai_comment = result.comment
             
-    response = client.models.generate_content(
-        model='gemini-2.5-flash', 
-        contents=prompt,
-        config={
-            'response_mime_type': 'application/json',
-            'response_schema': VerificationResult,
-        }
-    )
-    
-    if response.parsed:
-        result = response.parsed
-    else:
-        raw_data = json.loads(response.text)
-        result = VerificationResult(**raw_data)
-    
+    except errors.ServerError as e:
+        ai_comment = "AI 서버 과부하로 인해 나중에 검증됩니다."
+    except Exception as e:
+        ai_comment = "검증 중 오류가 발생했습니다."
+
     db_post = Post(
         title=post.title,
         contents=post.contents,
         author_id=post.author_id,
-        verified=result.isReal
+        verified=verified_status
     )
-    db.add(db_post)
-    db.commit()
-    db.refresh(db_post)
-    return {"post": db_post, "comment": result.comment}
+    
+    try:
+        db.add(db_post)
+        db.commit()
+        db.refresh(db_post)
+        return {"post": db_post, "comment": ai_comment}
+    except Exception as e:
+        db.rollback()
+        return {"error": "데이터 저장 중 오류가 발생했습니다."}
 
 def get_all_posts(db: Session, skip: int = 0, limit: int = 100):
     return db.query(Post).offset(skip).limit(limit).all()
