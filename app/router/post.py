@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from app.core.database import SessionLocal
-from app.crud.post import create_post as crud_create_post, get_all_posts, get_recent_posts, get_post, update_post, delete_post
+from app.crud.post import create_post as crud_create_post, get_all_posts, get_recent_posts, get_post, update_post, delete_post,get_post_by_title,get_user_post
 from app.schemas.post import Post, PostCreate, PostUpdate,PostWithComment
 
 router = APIRouter(
@@ -50,3 +50,13 @@ def delete_existing_post(post_id: int, db: Session = Depends(get_db)):
     if db_post is None:
         raise HTTPException(status_code=404, detail="Post not found")
     return db_post
+
+@router.get("/{post_title}", response_model=Post)
+def read_post_by_title(title: str, db: Session = Depends(get_db)):
+    posts = get_post_by_title(db, title)
+    return posts
+
+@router.get("/{user_id}", response_model=Post)
+def read_post_by_user_id(user_id: int, db: Session = Depends(get_db)):
+    posts = get_user_post(db, user_id)
+    return posts
