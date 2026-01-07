@@ -1,25 +1,27 @@
-from sqlalchemy.orm import Session
-from app.models.models import User,Post
-from app.schemas.post import PostCreate, PostUpdate
-import time
+import os
 import json
+from sqlalchemy.orm import Session
+from app.models.models import User, Post
+from app.schemas.post import PostCreate, PostUpdate
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from google import genai
-import os
+from google.genai import types
 
+load_dotenv()
 
 class VerificationResult(BaseModel):
     isReal: bool
     comment: str
 
-import vertexai
-from vertexai.generative_models import GenerativeModel, GenerationConfig
-import json
+# Vertex AI를 API 키 방식으로 호출하는 설정
+client = genai.Client(
+    api_key=os.getenv("GEMINI_API_KEY"),
+    vertexai=True, # 이 옵션이 핵심입니다!
+    project="ecstatic-backup-483515-d3",
+    location="us-central1"
+)
 
-import os
-os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY") 
-vertexai.init(project="ecstatic-backup-483515-d3", location="us-central1")
 
 def _verify_post_content(contents: str):
     prompt=f"""
@@ -37,36 +39,28 @@ def _verify_post_content(contents: str):
         [검증 대상 본문]:
         {contents[:2000]}
     """
-    
-    # 2. 모델 설정 (Vertex AI 모델 명칭 사용)
-    model = GenerativeModel("gemini-2.0-flash")
-    
-    verified_status = False
-    ai_comment = "검증 서비스 일시 중단"
 
     try:
-        response = model.generate_content(
-            prompt,
-            generation_config=GenerationConfig(
-                response_mime_type="application/json",
-                response_schema=VerificationResult.model_json_schema() 
+        response = client.models.generate_content(
+            model='gemini-2.0-flash', 
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type='application/json',
+                response_schema=VerificationResult,
             )
         )
         
-        if response.text:
-            result = json.loads(response.text)
-            verified_status = result.get("isReal", False)
-            ai_comment = result.get("comment", "")
+        if response.parsed:
+            return response.parsed.isReal, response.parsed.comment
+        else:
+            return False, "검증 결과를 얻을 수 없습니다."
             
     except Exception as e:
         error_msg = str(e)
-        if "429" in error_msg or "QUOTA_EXCEEDED" in error_msg:
-            ai_comment = "AI 서버 과부하로 인해 나중에 검증됩니다."
-        else:
-            ai_comment = f"검증 중 오류가 발생했습니다: {error_msg}"
-
-    return verified_status, ai_comment
-
+        print(f"Error: {error_msg}")
+        if "429" in error_msg:
+            return False, "AI 서버 과부하입니다. 잠시 후 다시 시도해주세요."
+        return False, f"검증 중 오류 발생: {error_msg}"
 
 def create_post(db: Session, post: PostCreate):
     user_exists = db.query(User).filter(User.id == post.author_id).first()
@@ -74,7 +68,7 @@ def create_post(db: Session, post: PostCreate):
         return {"error": "존재하지 않는 사용자 ID입니다."}
     
     verified_status, ai_comment = _verify_post_content(post.contents)
-
+    
     db_post = Post(
         title=post.title,
         contents=post.contents,
