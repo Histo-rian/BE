@@ -14,9 +14,10 @@ class VerificationResult(BaseModel):
     isReal: bool
     comment: str
 
+os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY")
+
 # Vertex AI를 API 키 방식으로 호출하는 설정
 client = genai.Client(
-    api_key=os.getenv("GEMINI_API_KEY"),
     vertexai=True, # 이 옵션이 핵심입니다!
     project="ecstatic-backup-483515-d3",
     location="us-central1"
@@ -68,7 +69,7 @@ def create_post(db: Session, post: PostCreate):
         return {"error": "존재하지 않는 사용자 ID입니다."}
     
     verified_status, ai_comment = _verify_post_content(post.contents)
-    
+
     db_post = Post(
         title=post.title,
         contents=post.contents,
