@@ -8,12 +8,18 @@ from pydantic import BaseModel
 from google import genai
 import os
 
-load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 class VerificationResult(BaseModel):
     isReal: bool
     comment: str
+
+import vertexai
+from vertexai.generative_models import GenerativeModel, GenerationConfig
+import json
+
+import os
+os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY") 
+vertexai.init(project="ecstatic-backup-483515-d3", location="us-central1")
 
 def _verify_post_content(contents: str):
     prompt=f"""
@@ -31,33 +37,36 @@ def _verify_post_content(contents: str):
         [검증 대상 본문]:
         {contents[:2000]}
     """
+    
+    # 2. 모델 설정 (Vertex AI 모델 명칭 사용)
+    model = GenerativeModel("gemini-2.0-flash")
+    
     verified_status = False
     ai_comment = "검증 서비스 일시 중단"
 
     try:
-        response = client.models.generate_content(
-            model='gemini-2.0-flash', 
-            contents=prompt,
-            config={
-                'response_mime_type': 'application/json',
-                'response_schema': VerificationResult,
-            }
+        response = model.generate_content(
+            prompt,
+            generation_config=GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=VerificationResult.model_json_schema() 
+            )
         )
         
-        if response.parsed:
-            result = response.parsed
-            verified_status = result.isReal
-            ai_comment = result.comment
+        if response.text:
+            result = json.loads(response.text)
+            verified_status = result.get("isReal", False)
+            ai_comment = result.get("comment", "")
             
     except Exception as e:
-        # Check if it's a quota error or other
         error_msg = str(e)
-        if "RESOURCE_EXHAUSTED" in error_msg:
+        if "429" in error_msg or "QUOTA_EXCEEDED" in error_msg:
             ai_comment = "AI 서버 과부하로 인해 나중에 검증됩니다."
         else:
-            ai_comment = "검증 중 오류가 발생했습니다."
+            ai_comment = f"검증 중 오류가 발생했습니다: {error_msg}"
 
     return verified_status, ai_comment
+
 
 def create_post(db: Session, post: PostCreate):
     user_exists = db.query(User).filter(User.id == post.author_id).first()
